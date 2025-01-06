@@ -1,144 +1,46 @@
-# 1
-Enhanced GCP Report Processing Script
+# 1. 
+# README for Enhanced GCP Report Processor
 
-Overview
+## Overview
+The `create_simplified_gcp_report` script processes Google Cloud Platform (GCP) audit reports to generate detailed, well-structured Excel reports. It includes features for categorization, data analysis, compliance checking, and visualization.
 
-This Python script processes and enhances GCP (Google Cloud Platform) compliance reports. It provides a comprehensive analysis of compliant and non-compliant findings, creates summaries, and outputs an organized Excel report.
+## Features
+- **Supports CSV and Excel Files:** Automatically detects and processes input files in `.csv` or `.xlsx` format.
+- **Categorized Analysis:** Separates compliant and non-compliant findings for easier review.
+- **Enhanced Summaries:** Generates service-level summaries and detailed analysis tables.
+- **Custom Formatting:** Applies color-coded formatting for priority and status.
+- **Zebra Striping:** Alternates row colors in summary tables for better readability.
+- **Excel Output:** Saves the processed data in a user-friendly `.xlsx` format with multiple sheets.
 
-Features
+## Requirements
+- **Python Packages:**
+  - `pandas`
+  - `numpy`
+  - `openpyxl`
+  - `xlsxwriter`
+- **Python Version:** Ensure Python 3.6 or higher.
 
-Support for CSV and Excel Input Files: Automatically detects and processes .csv or .xlsx files.
-
-Data Categorization: Separates data into compliant and non-compliant categories for easier analysis.
-
-Detailed Service Analysis: Groups and summarizes issues by GCP services.
-
-Enhanced Reporting: Generates an Excel file with formatted sheets for raw data, consolidated findings, and detailed summaries.
-
-Custom Formatting:
-
-Zebra striping for better readability.
-
-Priority-based formatting.
-
-Section headers with color coding.
-
-Automated Summary Tables: Summarizes compliant and non-compliant findings for quick review.
-
-Requirements
-
-Python Dependencies
-
-Ensure the following Python packages are installed:
-
-pandas
-
-numpy
-
-openpyxl
-
-xlsxwriter
-
-Install these dependencies using pip:
-
+## Installation
+Install the required packages via pip:
+```bash
 pip install pandas numpy openpyxl xlsxwriter
+```
 
-Input File
+## How to Use
+1. **Run the Script:**
+   Execute the script from the command line:
+   ```bash
+   python <script_name>.py
+   ```
+   Replace `<script_name>` with the name of the script file.
 
-The input file must be in CSV or Excel format and contain the following required columns:
+2. **Provide the Input File:**
+   - When prompted, input the path to the GCP report file (CSV or Excel format).
 
-service
+3. **Generated Report:**
+   - The script saves the enhanced report in the same directory with a timestamped filename, e.g., `report_enhanced_20250107_123456.xlsx`.
 
-title
-
-status
-
-control_title
-
-control_description
-
-reason
-
-resource
-
-project
-
-location
-
-Output File
-
-The script generates an enhanced report as an Excel file with the following sheets:
-
-Report_pp: Raw input data.
-
-Consolidated: Compliant and non-compliant findings.
-
-Service Analysis: Issues grouped by GCP service.
-
-Summary Tables: Summarized findings with zebra striping and priority formatting.
-
-Usage
-
-Running the Script
-
-Save the script as a .py file, e.g., gcp_report_processor.py.
-
-Execute the script in a terminal or command prompt:
-
-python gcp_report_processor.py
-
-Enter the file name of the GCP report when prompted.
-
-The script processes the file and saves the enhanced report in the same directory as the script.
-
-Example
-
-Input:
-
-File name: gcp_report.csv
-
-Example content:
-
-service,title,status,control_title,control_description,reason,resource,project,location
-Compute,High CPU Usage,alarm,CPU Monitoring,Monitor CPU usage regularly,Threshold exceeded,vm-instance-1,project-id-123,us-central1
-Storage,Secure Access,ok,Data Security,Ensure data encryption at rest,Compliant,bucket-1,project-id-456,us-east1
-
-Output:
-
-Enhanced report: gcp_report_enhanced_report_<timestamp>.xlsx
-
-Output Breakdown
-
-Raw Data (Report_pp): Contains all the original data from the input file.
-
-Consolidated Findings:
-
-Non-compliant findings with actionable columns: Feedback, Action Items, Priority, etc.
-
-Compliant findings with a summary of well-architected resources.
-
-Service Analysis: Aggregated issues, affected projects, and resources for each service.
-
-Summary Tables:
-
-Non-compliant findings summary.
-
-Compliant findings summary with Safe/Well Architected status.
-
-Error Handling
-
-File Format Validation: Supports only .csv or .xlsx files.
-
-Missing Columns: The script checks for required columns and raises an error if any are missing.
-
-File Not Found: Verifies the existence of the input file and raises an error if it is not found.
-
-Customization
-
-Categories: The script categorizes services into predefined groups. You can modify the categories dictionary to fit specific needs.
-
-Column Formatting: Adjust the formats dictionary for custom Excel formatting.
-
-License
-
-This script is provided "as-is" without warranty of any kind. Feel free to modify and use it for personal or professional purposes.
+## Output Structure
+The output Excel file contains the following sheets:
+1. **Report_pp:** Raw input data for reference.
+2. **Consolidated:** Detailed compliant and
