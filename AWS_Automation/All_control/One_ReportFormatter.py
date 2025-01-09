@@ -59,8 +59,8 @@ def update_priority_and_recommendation(df_input, df_priority):
     return df_input
 
 def create_enhanced_report(df_input, final_report_file):
-    # Create Excel writer
-    with pd.ExcelWriter(final_report_file, engine='xlsxwriter') as writer:
+    # Create Excel writer with nan_inf_to_errors option
+    with pd.ExcelWriter(final_report_file, engine='xlsxwriter', engine_kwargs={'options': {'nan_inf_to_errors': True}}) as writer:
         workbook = writer.book
 
         # Define formats
@@ -76,20 +76,219 @@ def create_enhanced_report(df_input, final_report_file):
             'zebra_dark': workbook.add_format({'bg_color': '#E0E0E0'})
         }
 
-        # First write the raw data sheet
-        df_input.to_excel(writer, sheet_name='Report_Raw.pp', index=False)
+        # Create all necessary sheets first
+        workbook.add_worksheet('Report_Raw.pp')
+        workbook.add_worksheet('Summary Tables')
+        workbook.add_worksheet('Category Analysis')
+        workbook.add_worksheet('Consolidated')
+
+        # Create category sheets
+        for category in categories.keys():
+            sheet_name = category.replace(' ', '_')[:31]
+            workbook.add_worksheet(sheet_name)
+
+        # Clean the dataframe before writing
+        df_input_clean = df_input.fillna('')  # Replace NaN with empty string
+
+        # Write raw data sheet
+        df_input_clean.to_excel(writer, sheet_name='Report_Raw.pp', index=False)
         raw_sheet = writer.sheets['Report_Raw.pp']
-        for col_num, value in enumerate(df_input.columns.values):
+        for col_num, value in enumerate(df_input_clean.columns.values):
             raw_sheet.write(0, col_num, value, formats['header'])
 
-        # Create category sheets with specific columns
-        create_category_sheets(writer, df_input, formats)
+        # Create category sheets
+        create_category_sheets(writer, df_input_clean, formats)
 
-        # Create summary tables last
-        create_summary_tables(writer, df_input, formats)
+        # Create summary tables
+        create_summary_tables(writer, df_input_clean, formats)
+
+        # Create consolidated sheet
+        create_consolidated_sheet(writer, df_input_clean, formats)
+
+        # Create category summary
+        create_category_summary_table(writer, df_input_clean, formats)
+
+def safe_write(sheet, row, col, value, format):
+    """Helper function to safely write values to Excel"""
+    if pd.isna(value) or value is None:
+        sheet.write(row, col, '', format)
+    else:
+        try:
+            sheet.write(row, col, value, format)
+        except Exception:
+            sheet.write(row, col, str(value), format)
+
+def write_consolidated_section(sheet, df, start_row, columns, formats, is_compliant):
+    row = start_row
+    for _, data_row in df.iterrows():
+        for col, column in enumerate(columns):
+            value = data_row[column]
+            
+            # Determine format based on column and compliance status
+            if column in ['title', 'status']:
+                format_to_use = formats['green'] if is_compliant else formats['red']
+            elif column == 'priority':
+                if is_compliant:
+                    format_to_use = formats['green']
+                    value = "Safe/Well Architected"
+                else:
+                    priority = data_row['priority']
+                    format_to_use = formats['red'] if priority == 'High' else \
+                                  formats['orange'] if priority == 'Medium' else \
+                                  formats['yellow'] if priority == 'Low' else formats['zebra_light']
+            else:
+                format_to_use = formats['zebra_light']
+            
+            safe_write(sheet, row, col, value, format_to_use)
+        row += 1
+    
+    return row
+
+def write_summary_section(sheet, df, start_row, title, formats, is_compliant):
+    # Write section header
+    header_format = formats['section_header_green'] if is_compliant else formats['section_header_red']
+    sheet.write(start_row, 0, title, header_format)
+    
+    # Write column headers
+    headers = ['Title', 'Control Title', 'Control Description', 'Open Issues', 'Priority']
+    for col, header in enumerate(headers):
+        sheet.write(start_row + 1, col, header, formats['header'])
+    
+    # Prepare and write data
+    summary = df.groupby(['title', 'control_title', 'control_description']).size().reset_index(name='Open Issues')
+    
+    for row_idx, row in summary.iterrows():
+        actual_row = start_row + row_idx + 2
+        row_format = formats['zebra_dark'] if row_idx % 2 == 0 else formats['zebra_light']
+        
+        safe_write(sheet, actual_row, 0, row['title'], row_format)
+        safe_write(sheet, actual_row, 1, row['control_title'], row_format)
+        safe_write(sheet, actual_row, 2, row['control_description'], row_format)
+        safe_write(sheet, actual_row, 3, row['Open Issues'], row_format)
+        
+        # Write priority with appropriate formatting
+        if is_compliant:
+            sheet.write(actual_row, 4, "Safe/Well Architected", formats['green'])
+        else:
+            priority = df[df['control_title'] == row['control_title']]['priority'].iloc[0]
+            format_to_use = formats['red'] if priority == 'High' else \
+                           formats['orange'] if priority == 'Medium' else \
+                           formats['yellow'] if priority == 'Low' else row_format
+            safe_write(sheet, actual_row, 4, priority, format_to_use)
+
+def create_summary_tables(writer, df, formats):
+    summary_sheet = writer.sheets['Summary Tables']
+    
+    # Set column widths
+    column_widths = {'Title': 25, 'Control Title': 40, 'Control Description': 60, 'Open Issues': 15, 'Priority': 20}
+    for col, width in enumerate(column_widths.values()):
+        summary_sheet.set_column(col, col, width)
+
+    # Non-compliant findings section
+    non_compliant_df = df[df['status'] == 'alarm']
+    write_summary_section(summary_sheet, non_compliant_df, 0, "Non-Compliant Findings", formats, is_compliant=False)
+
+    # Calculate the last row of non-compliant section
+    last_row = len(non_compliant_df) + 3  # Header + title + data rows
+
+    # Compliant findings section
+    compliant_df = df[df['status'].isin(['ok', 'info', 'skip'])]
+    write_summary_section(summary_sheet, compliant_df, last_row + 2, "Compliant Findings", formats, is_compliant=True)
+
+def write_summary_section(sheet, df, start_row, title, formats, is_compliant):
+    # Write section header
+    header_format = formats['section_header_green'] if is_compliant else formats['section_header_red']
+    sheet.write(start_row, 0, title, header_format)
+    
+    # Write column headers
+    headers = ['Title', 'Control Title', 'Control Description', 'Open Issues', 'Priority']
+    for col, header in enumerate(headers):
+        sheet.write(start_row + 1, col, header, formats['header'])
+    
+    # Prepare and write data
+    summary = df.groupby(['title', 'control_title', 'control_description']).size().reset_index(name='Open Issues')
+    
+    for row_idx, row in summary.iterrows():
+        actual_row = start_row + row_idx + 2
+        row_format = formats['zebra_dark'] if row_idx % 2 == 0 else formats['zebra_light']
+        
+        sheet.write(actual_row, 0, row['title'], row_format)
+        sheet.write(actual_row, 1, row['control_title'], row_format)
+        sheet.write(actual_row, 2, row['control_description'], row_format)
+        sheet.write(actual_row, 3, row['Open Issues'], row_format)
+        
+        # Write priority with appropriate formatting
+        if is_compliant:
+            sheet.write(actual_row, 4, "Safe/Well Architected", formats['green'])
+        else:
+            priority = df[df['control_title'] == row['control_title']]['priority'].iloc[0]
+            format_to_use = formats['red'] if priority == 'High' else \
+                           formats['orange'] if priority == 'Medium' else \
+                           formats['yellow'] if priority == 'Low' else row_format
+            sheet.write(actual_row, 4, priority, format_to_use)
+
+def create_consolidated_sheet(writer, df, formats):
+    consolidated_sheet = writer.sheets['Consolidated']
+    
+    # Define columns to show
+    columns = ['title', 'status', 'control_title', 'control_description', 
+              'Recommendation Steps/Approach', 'region', 'account_id', 
+              'resource', 'reason', 'priority']
+    
+    # Set column widths
+    column_widths = {
+        'title': 25, 'status': 15, 'control_title': 40, 
+        'control_description': 60, 'Recommendation Steps/Approach': 60,
+        'region': 15, 'account_id': 20, 'resource': 40, 
+        'reason': 50, 'priority': 20
+    }
+    
+    for col, column in enumerate(columns):
+        consolidated_sheet.set_column(col, col, column_widths.get(column, 15))
+    
+    # Write headers
+    for col, column in enumerate(columns):
+        consolidated_sheet.write(0, col, column, formats['header'])
+    
+    # Process non-compliant findings (alarm status)
+    alarm_df = df[df['status'] == 'alarm']
+    row = 1
+    row = write_consolidated_section(consolidated_sheet, alarm_df, row, columns, formats, is_compliant=False)
+    
+    # Add a blank row
+    row += 1
+    
+    # Process compliant findings (ok, info, skip status)
+    compliant_df = df[df['status'].isin(['ok', 'info', 'skip'])]
+    write_consolidated_section(consolidated_sheet, compliant_df, row, columns, formats, is_compliant=True)
+
+def write_consolidated_section(sheet, df, start_row, columns, formats, is_compliant):
+    row = start_row
+    for _, data_row in df.iterrows():
+        for col, column in enumerate(columns):
+            value = data_row[column]
+            
+            # Determine format based on column and compliance status
+            if column in ['title', 'status']:
+                format_to_use = formats['green'] if is_compliant else formats['red']
+            elif column == 'priority':
+                if is_compliant:
+                    format_to_use = formats['green']
+                    value = "Safe/Well Architected"
+                else:
+                    priority = data_row['priority']
+                    format_to_use = formats['red'] if priority == 'High' else \
+                                  formats['orange'] if priority == 'Medium' else \
+                                  formats['yellow'] if priority == 'Low' else formats['zebra_light']
+            else:
+                format_to_use = formats['zebra_light']
+            
+            sheet.write(row, col, value, format_to_use)
+        row += 1
+    
+    return row
 
 def create_category_sheets(writer, df, formats):
-    # Define columns for category sheets
     category_columns = [
         'title', 'control_title', 'control_description', 
         'Recommendation Steps/Approach', 'region', 'account_id', 
@@ -97,7 +296,6 @@ def create_category_sheets(writer, df, formats):
         'Checkbox', 'Review Date', 'Action Items'
     ]
 
-    # Add empty columns for engineer input
     df['Feedback'] = ''
     df['Checkbox'] = ''
     df['Review Date'] = ''
@@ -106,18 +304,16 @@ def create_category_sheets(writer, df, formats):
     for category, services in categories.items():
         category_data = df[df['title'].isin(services)]
         if not category_data.empty:
-            # Select and reorder columns
             category_data = category_data[category_columns]
             
-            # Write to sheet
-            sheet_name = category.replace(' ', '_')[:31]  # Excel sheet name length limit
+            sheet_name = category.replace(' ', '_')[:31]
             category_data.to_excel(writer, sheet_name=sheet_name, index=False)
             worksheet = writer.sheets[sheet_name]
             
-            # Format headers
+            # Format headers and set column widths
             for col_num, value in enumerate(category_data.columns.values):
                 worksheet.write(0, col_num, value, formats['header'])
-                worksheet.set_column(col_num, col_num, 15)
+                worksheet.set_column(col_num, col_num, 20)  # Set standard width
 
             # Apply priority color formatting
             priority_col = category_columns.index('priority')
@@ -131,49 +327,13 @@ def create_category_sheets(writer, df, formats):
                 elif priority == 'Safe/Well Architected':
                     worksheet.write(row_num, priority_col, priority, formats['green'])
 
-def create_summary_tables(writer, df, formats):
-    workbook = writer.book
-    summary_sheet = workbook.add_worksheet('Summary Tables')
-    
-    # Non-compliant findings summary
-    non_compliant_df = df[df['status'] == 'alarm']
-    summary = non_compliant_df.groupby(['title', 'control_title', 'control_description', 'priority']).size().reset_index(name='Open Issues')
-    
-    # Write non-compliant section header
-    summary_sheet.write(0, 0, 'Non-Compliant Findings', formats['section_header_red'])
-    
-    # Write headers in specified order
-    headers = ['Title', 'Control Title', 'Control Description', 'Open Issues', 'Priority']
-    for col, header in enumerate(headers):
-        summary_sheet.write(1, col, header, formats['header'])
-    
-    # Write data with formatting
-    for row_idx, row in summary.iterrows():
-        row_format = formats['zebra_dark'] if row_idx % 2 == 0 else formats['zebra_light']
-        
-        # Write Title, Control Title, Control Description
-        summary_sheet.write(row_idx + 2, 0, row['title'], row_format)
-        summary_sheet.write(row_idx + 2, 1, row['control_title'], row_format)
-        summary_sheet.write(row_idx + 2, 2, row['control_description'], row_format)
-        summary_sheet.write(row_idx + 2, 3, row['Open Issues'], row_format)
-        
-        # Format priority column with color
-        priority = row['priority']
-        if priority == 'High':
-            format_to_use = formats['red']
-        elif priority == 'Medium':
-            format_to_use = formats['orange']
-        elif priority == 'Low':
-            format_to_use = formats['yellow']
-        else:
-            format_to_use = row_format
-        summary_sheet.write(row_idx + 2, 4, priority, format_to_use)
-    
-    # Add category summary at the end
-    create_category_summary_table(writer, df, formats)
-
 def create_category_summary_table(writer, df, formats):
-    category_sheet = writer.book.add_worksheet('Category Analysis')
+    category_sheet = writer.sheets['Category Analysis']
+    
+    # Set column widths
+    column_widths = {'Category': 25, 'Open Issues': 15, 'Safe Count': 15, 'Total': 15}
+    for col, width in enumerate(column_widths.values()):
+        category_sheet.set_column(col, col, width)
     
     # Write headers
     headers = ['Category', 'Open Issues', 'Safe Count', 'Total']
@@ -195,20 +355,31 @@ def create_category_summary_table(writer, df, formats):
             row += 1
 
 def main():
-    input_file = input("Enter the input file name (CSV or Excel): ")
-    priority_file = "PowerPipeControls_Annotations.xlsx"
-    
-    # Create unique timestamp
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filename = os.path.splitext(input_file)[0]
-    output_file = f"{filename}_PowerPipe_Report_{timestamp}.xlsx"
+    try:
+        input_file = input("Enter the input file name (CSV or Excel): ")
+        priority_file = "PowerPipeControls_Annotations.xlsx"
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = os.path.splitext(input_file)[0]
+        output_file = f"{filename}_PowerPipe_Report_{timestamp}.xlsx"
 
-    # Load and process data
-    df_input, df_priority = load_data(input_file, priority_file)
-    updated_df = update_priority_and_recommendation(df_input, df_priority)
-    create_enhanced_report(updated_df, output_file)
-    
-    print(f"\nEnhanced report generated: {output_file}")
+        print("\nLoading data files...")
+        df_input, df_priority = load_data(input_file, priority_file)
+        
+        print("Updating priority and recommendations...")
+        updated_df = update_priority_and_recommendation(df_input, df_priority)
+        
+        print("Generating enhanced report...")
+        create_enhanced_report(updated_df, output_file)
+        
+        print(f"\nEnhanced report generated successfully: {output_file}")
+        
+    except FileNotFoundError as e:
+        print(f"\nError: File not found - {str(e)}")
+    except ValueError as e:
+        print(f"\nError: {str(e)}")
+    except Exception as e:
+        print(f"\nAn unexpected error occurred: {str(e)}")
 
 if __name__ == "__main__":
     main()
