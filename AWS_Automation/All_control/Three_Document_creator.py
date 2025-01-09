@@ -1,6 +1,8 @@
 import os
 from docx.enum.table import WD_TABLE_ALIGNMENT
 import openpyxl
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn  # Import the namespace function if needed
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
@@ -12,18 +14,11 @@ import pandas as pd
 import matplotlib.image as mpimg
 
 class ComplianceReportDocumentGenerator:
-    def __init__(self, excel_file, client_name, services_link):
-        """
-        Initialize the document generator with the Excel report
-        
-        Args:
-            excel_file (str): Path to the Excel report
-            client_name (str): Name of the client
-            services_link (str): Link to the detailed services
-        """
+    def __init__(self, excel_file, client_name, services_link, logo_path=None):
         self.excel_file = excel_file
         self.client_name = client_name
         self.services_link = services_link
+        self.logo_path = logo_path
         self.workbook = openpyxl.load_workbook(excel_file, read_only=False, data_only=True)
         self.document = Document()
         
@@ -32,6 +27,37 @@ class ComplianceReportDocumentGenerator:
         for section in sections:
             section.page_height = Inches(10)
             section.page_width = Inches(13)
+            section.left_margin = Inches(1)
+            section.right_margin = Inches(1)
+            section.top_margin = Inches(1)
+            section.bottom_margin = Inches(1)
+            
+            # Add header with logo
+            header = section.header
+            header_table = header.add_table(1, 2, width=Inches(11))
+            
+            # Add page number to header
+            header_cell_right = header_table.cell(0, 1)
+            paragraph = header_cell_right.paragraphs[0]
+            run = paragraph.add_run()
+            fldChar1 = OxmlElement('w:fldChar')
+            fldChar1.set(qn('w:fldCharType'), 'begin')
+            instrText = OxmlElement('w:instrText')
+            instrText.text = 'PAGE'
+            fldChar2 = OxmlElement('w:fldChar')
+            fldChar2.set(qn('w:fldCharType'), 'end')
+            run._r.append(fldChar1)
+            run._r.append(instrText)
+            run._r.append(fldChar2)
+            paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
+            
+            # Add logo if provided
+            if logo_path and os.path.exists(logo_path):
+                header_cell_left = header_table.cell(0, 0)
+                paragraph = header_cell_left.paragraphs[0]
+                run = paragraph.add_run()
+                run.add_picture(logo_path, width=Inches(1))
+                paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
     
     def _create_chart_from_excel_data(self, sheet_name, x_column, y_columns):
         """
@@ -96,14 +122,16 @@ class ComplianceReportDocumentGenerator:
         return chart_path
     
     def _create_title_page(self):
-        """
-        Create the first page with report details and index
-        """
-        # Title
-        title = self.document.add_heading(f"**{self.client_name} AWS Report**", level=1)
+        """Enhanced title page creation with better spacing"""
+        title = self.document.add_heading(f"{self.client_name} AWS Report", level=1)
         title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        title_paragraph = title.runs[0]
+        title_paragraph.font.size = Pt(24)
+        title_paragraph.font.color.rgb = RGBColor(31, 73, 125)
         
-        # Report Details
+        # Add spacing
+        self.document.add_paragraph().add_run().add_break()
+        
         details = [
             f"Client: {self.client_name}",
             f"Report Name: {self.client_name} AWS Compliance Report",
@@ -111,90 +139,127 @@ class ComplianceReportDocumentGenerator:
             "Report Version: Version 1.0"
         ]
         
-        for detail in details:
-            para = self.document.add_paragraph(detail)
-            para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        details_table = self.document.add_table(rows=len(details), cols=1)
+        details_table.style = 'Table Grid'
+        details_table.alignment = WD_TABLE_ALIGNMENT.CENTER
         
-        # Add some space
-        self.document.add_paragraph()
+        for i, detail in enumerate(details):
+            cell = details_table.rows[i].cells[0]
+            cell.text = detail
+            cell.paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
         
-        # Index (now on the same page)
+        # Add spacing before index
+        self.document.add_paragraph().add_run().add_break()
+        self.document.add_paragraph().add_run().add_break()
+        
         index_title = self.document.add_heading("Index", level=1)
         index_title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
         
-        # Create index table
+        # Create enhanced index table with actual page numbers
         index_data = [
-            ["Title", "Page No"],
-            ["Overview", "02"],
-            ["Graph Analysis", "03"],
-            ["Link of Detailed Report", "05"],
-            ["AWS Compliance Control Summary", "06"],
-            ["Synopsis", "26"]
+            ["Title", "Page"],
+            ["Overview", "1"],
+            ["Priority Summary", "2"],
+            ["Service Pivot Analysis", "3"],
+            ["Service Analysis", "4"],
+            ["Link of Detailed Report", "5"],
+            ["Synopsis", "6"],
+            ["Conclusion", "7"]
         ]
         
         index_table = self.document.add_table(rows=len(index_data), cols=2)
         index_table.style = 'Table Grid'
+        index_table.alignment = WD_TABLE_ALIGNMENT.CENTER
         
         for i, row in enumerate(index_data):
+            cells = index_table.rows[i].cells
             for j, cell_value in enumerate(row):
-                cell = index_table.cell(i, j)
+                cell = cells[j]
                 cell.text = cell_value
+                paragraph = cell.paragraphs[0]
+                paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
                 if i == 0:
-                    cell.paragraphs[0].runs[0].bold = True
-        
+                    run = paragraph.runs[0]
+                    run.font.bold = True
+                    run.font.size = Pt(12)
+                    cell.paragraphs[0].runs[0].font.color.rgb = RGBColor(31, 73, 125)
         # Add page break after index
         self.document.add_page_break()
+
+    def _set_column_widths(self, table, widths):
+        """Set custom column widths for tables"""
+        for row in table.rows:
+            for idx, width in enumerate(widths):
+                row.cells[idx].width = Inches(width)
     
+
     def _add_table_to_doc(self, data, title=None):
-        """
-        Add a table to the document with color formatting
-        
-        Args:
-            data (list): Table data
-            title (str, optional): Table title
-        """
+        """Enhanced table formatting with better column widths and spacing"""
         if title:
-            self.document.add_paragraph(title, style='Heading 3')
+            heading = self.document.add_heading(title, level=2)
+            heading.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+            heading.runs[0].font.color.rgb = RGBColor(31, 73, 125)
+            
+            # Add spacing after heading
+            self.document.add_paragraph().add_run().add_break()
         
         if not data:
             self.document.add_paragraph("No data available.")
             return
         
-        # Create table
         table = self.document.add_table(rows=len(data), cols=len(data[0]))
         table.style = 'Table Grid'
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
         
-        # Color mapping for priorities
+        # Set custom column widths based on content type
+        if "Service Analysis" in str(title):
+            widths = [0.5, 1.0, 2.0, 5.0, 1.0, 1.0]  # Adjusted widths for Service Analysis
+            self._set_column_widths(table, widths)
+        
         color_map = {
-            'High': RGBColor(255, 0, 0),    # Red
-            'Medium': RGBColor(255, 165, 0), # Orange
-            'Low': RGBColor(255, 255, 0),    # Yellow
-            'Safe': RGBColor(0, 255, 0)      # Green
+            'High': RGBColor(231, 76, 60),
+            'Medium': RGBColor(243, 156, 18),
+            'Low': RGBColor(241, 196, 15),
+            'Safe': RGBColor(46, 204, 113)
         }
         
-        # Add headers and data
+        # Enhanced table formatting
         for i, row in enumerate(data):
             for j, cell_value in enumerate(row):
                 cell = table.cell(i, j)
                 cell.text = str(cell_value) if cell_value is not None else ''
+                paragraph = cell.paragraphs[0]
                 
-                # Style headers
+                # Center align all cells
+                paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+                
+                # Add spacing within cells
+                paragraph.space_before = Pt(6)
+                paragraph.space_after = Pt(6)
+                
                 if i == 0:
-                    cell.paragraphs[0].runs[0].bold = True
+                    # Header formatting
+                    run = paragraph.runs[0]
+                    run.font.bold = True
+                    run.font.size = Pt(11)
+                    cell.paragraphs[0].runs[0].font.color.rgb = RGBColor(31, 73, 125)
                 
-                # Color formatting for priority column
+                # Priority column formatting
                 if ('priority' in str(data[0][j]).lower() or 
                     j == len(row)-1 and 'priority' in str(data[0]).lower()):
                     priority = str(cell_value).strip()
                     if priority in color_map:
-                        run = cell.paragraphs[0].runs[0]
+                        run = paragraph.runs[0]
                         run.font.color.rgb = color_map[priority]
+                        run.font.bold = True
+
+        # Add spacing after table
+        self.document.add_paragraph().add_run().add_break()
     
     def generate_comprehensive_report(self):
         """
         Generate a comprehensive Word document from the Excel report
         """
-        # Create first page with title and index
         self._create_title_page()
         
         # Add Overview section
@@ -203,14 +268,16 @@ class ComplianceReportDocumentGenerator:
         run.bold = True
         
         overview_text = (
-            "The AWS Compliance module evaluates your AWS environment against key industry standards "
-            "like CIS, GDPR, PCI DSS, and others. This report provides comprehensive insights to help "
-            "you understand the compliance posture of your AWS account and resources.\n\n"
+            "The Cloud Security Posture Report is a comprehensive evaluation of your cloud environment, "
+            "focusing on its alignment with critical industry standards like CIS, SOC 2, PCI DSS, and best practices. "
+            "It provides actionable insights into potential risks and areas requiring attention, helping organizations maintain "
+            "a robust security posture.\n\n"
             "Resource Inventory:\n"
-            "• Offers a detailed count of all resources in your AWS environment, categorized by type (e.g., EC2 instances, S3 buckets, RDS databases).\n"
+            "• Offers a detailed count of all resources in your cloud environment, categorized by type (e.g., compute instances, "
+            "storage buckets, managed databases).\n"
             "• Helps identify the breadth of resources being managed and ensures no critical resource is overlooked.\n\n"
             "Account/Region Breakdown:\n"
-            "• Displays the distribution of resources across different AWS accounts and regions.\n"
+            "• Displays the distribution of resources across different accounts and regions.\n"
             "• Enables easy identification of resource concentration and highlights potential regional compliance concerns.\n\n"
             "Configuration Compliance:\n"
             "• Tracks key security and operational configurations, such as whether encryption, logging, or versioning is enabled.\n"
@@ -220,7 +287,8 @@ class ComplianceReportDocumentGenerator:
             "• Helps in understanding resource utilization patterns and supports decisions on archiving, upgrading, or retiring resources."
         )
         self.document.add_paragraph(overview_text)
-        
+
+
         # Sections to process
         sections = [
             {
@@ -240,9 +308,10 @@ class ComplianceReportDocumentGenerator:
             }
         ]
         
-        # Process each section
-        self.document.add_page_break()
         for section in sections:
+            # Process each section
+            self.document.add_page_break()
+            
             # Add section title
             title = self.document.add_heading(section['name'], level=2)
             title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
@@ -299,20 +368,40 @@ class ComplianceReportDocumentGenerator:
             "such as title, control_title, control_description, region, account_id, resource, reason, description, priority, "
             "Recommendation Steps/Approach, and status. For example, the following data will be available for each service:\n\n"
             
-            "Example 1:\n"
-            "Service: Account\n"
-            "Control Title: AWS account should be part of AWS Organizations\n"
-            "Control Description: Ensure that an AWS account is part of AWS Organizations. The rule is non-compliant if an AWS account is "
-            "not part of AWS Organizations or the AWS Organizations master account ID does not match the rule parameter MasterAccountId.\n"
-            "Region: global\n"
-            "Account ID: [Account ID]\n"
-            "ARN: [ARN Information]\n"
-            "Resource: [Resource Description]\n"
-            "Reason: This section contains recommendations for configuring Account resources.\n"
-            "Priority: 1\n"
-            "Recommendation Steps/Approach: Ensure the AWS account is a member of AWS Organizations. Steps: 1. Review account settings. "
-            "2. Enroll in AWS Organizations if not already a member.\n"
-            "Status: ok\n\n"
+            "**Example 1:**\n"
+            "**Service**: ACM\n"
+            "**Control Title**: ACM certificates should not expire within 30 days\n"
+            "**Control Description**: Ensure network integrity is protected by ensuring X509 certificates are issued by AWS ACM.\n"
+            "**Region**: ap-south-1\n"
+            "**Account ID**: [Account ID]\n"
+            "**ARN**: [ARN Information]\n"
+            "**Resource**: [Resource Expiry Information]\n"
+            "**Reason**: This section contains recommendations for configuring ACM resources.\n"
+            "**Priority**: High\n"
+            "**Recommendation Steps/Approach**: Ensure the AWS account is a member of AWS Organizations. Steps: 1. Review account settings. 2. Enroll in AWS Organizations if not already a member.\n"
+            "**Status**: ok\n\n"
+            
+            "**Detailed Explanation:**\n"
+            "**Service**: Indicates that the compliance check pertains to AWS ACM (Certificate Manager).\n\n"
+            "**Control Title**: The control ensures that no ACM certificates in use are set to expire within the next 30 days. "
+            "This is critical for maintaining secure communication and avoiding service disruptions.\n\n"
+            "**Control Description**: Emphasizes the importance of using X509 certificates issued by AWS ACM to ensure network integrity "
+            "and secure connections.\n\n"
+            "**Region**: Specifies the geographical region where this compliance check applies, which is ap-south-1 in this case.\n\n"
+            "**Account ID**: Placeholder for the unique identifier of the AWS account being evaluated.\n\n"
+            "**ARN**: Placeholder for the Amazon Resource Name, which uniquely identifies the specific resource being referred to.\n\n"
+            "**Resource**: Placeholder for information regarding the expiration details of the certificates under review.\n\n"
+            "**Reason**: Indicates the purpose of this compliance check, which is to provide recommendations for configuring ACM resources effectively.\n\n"
+            "**Priority Levels:**\n"
+            "- **High**: Requires immediate attention and is critical.\n"
+            "- **Medium**: After resolving high-priority items, medium-priority issues can be addressed.\n"
+            "- **Low**: Issues that are less urgent and can be addressed as time permits.\n"
+            "- **Safe/Well-Architected**: These resources already follow best practices and meet all requirements; no action is needed.\n\n"
+            "**Status:**\n"
+            "- **ok**: The resource is compliant with best practices.\n"
+            "- **info**: Additional information is provided, but no action is required.\n"
+            "- **skip**: The check was skipped as it does not apply in this context.\n"
+            "- **alarm**: Action is required to bring the resource into compliance with best practices.\n"
         )
         
         self.document.add_paragraph(link_description)
@@ -471,16 +560,13 @@ class ComplianceReportDocumentGenerator:
         return data
 
 def main():
-    # Prompt for Excel file and client name
     excel_file = input("Enter the path to the Excel compliance report: ").strip()
     client_name = input("Enter the client name: ").strip()
     services_link = input("Enter the link to the detailed services Excel: ").strip()
+    logo_path = "/home/rajath.h@optit.india/Documents/CSPM/imp_program/opt_it_technologies_i_pvt__ltd_logo.jpeg"
 
     try:
-        # Create document generator
-        generator = ComplianceReportDocumentGenerator(excel_file, client_name, services_link)
-        
-        # Generate comprehensive report
+        generator = ComplianceReportDocumentGenerator(excel_file, client_name, services_link, logo_path)
         generator.generate_comprehensive_report()
         
     except Exception as e:
