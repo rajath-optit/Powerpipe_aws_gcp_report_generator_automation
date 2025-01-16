@@ -1,1 +1,1 @@
-This script file all the remediation steps for IAM controls. The functions are created for every remediation and it is called. In future, the wrapper script will call the functions and pass the arguements.
+all atomation for pp done till now
