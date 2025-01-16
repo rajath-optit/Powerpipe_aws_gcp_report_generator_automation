@@ -540,4 +540,3 @@ delete_unattached_iam_policies() {
 #enable_single_active_access_key
 #delete_inline_policies
 #delete_unattached_iam_policies		
-		
