@@ -1,0 +1,36 @@
+cat Dockerfile 
+FROM ubuntu:latest
+
+# Install dependencies
+RUN apt-get update && \
+    apt-get install -y curl tar sudo unzip gnupg lsb-release && \
+    groupadd -g 1001 powerpipe && \
+    useradd -u 1001 --create-home --shell /bin/bash --gid powerpipe powerpipe && \
+    echo "powerpipe ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+# Environment variables
+ENV USER_NAME=powerpipe
+ENV GROUP_NAME=powerpipe
+ENV POWERPIPE_TELEMETRY=none
+
+WORKDIR /home/$USER_NAME
+
+# Install Powerpipe
+RUN curl -LO https://github.com/turbot/powerpipe/releases/download/v0.3.1/powerpipe.linux.amd64.tar.gz && \
+    tar xvzf powerpipe.linux.amd64.tar.gz && \
+    mv powerpipe /usr/local/bin/powerpipe && \
+    rm -rf powerpipe.linux.amd64.tar.gz
+
+# Install Steampipe
+RUN curl -LO https://steampipe.io/install/steampipe.sh && \
+    sh steampipe.sh && \
+    rm -f steampipe.sh
+
+# Switch to the non-root user
+USER powerpipe
+
+# Install GCP plugin for Steampipe
+RUN steampipe plugin install gcp
+
+# Default command to start the container
+CMD ["/bin/bash"]
