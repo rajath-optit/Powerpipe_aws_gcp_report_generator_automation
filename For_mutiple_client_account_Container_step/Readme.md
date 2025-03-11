@@ -576,7 +576,7 @@ sudo tail -f /var/log/nginx/error.log
 To configure authentication and proxy settings for a new client inside the `powerpipe` Nginx configuration file, add the following block:
 
 ```nginx
-# HTTPS Configuration for Foradian Container 1 (Port 9102)
+# HTTPS Configuration for client_name Container 1 (Port 9102)
 server {
     listen 443 ssl;
     server_name 10.10.30.93;
@@ -589,11 +589,11 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers 'HIGH:!aNULL:!MD5';
  
-    # Basic Authentication for Foradian Container 1
+    # Basic Authentication for client_name Container 1
     auth_basic "Restricted Area";
-    auth_basic_user_file /etc/nginx/.htpasswd-foradian1;
+    auth_basic_user_file /etc/nginx/.htpasswd-client_name1;
  
-    # WebSocket for Foradian Container 1
+    # WebSocket for client_name Container 1
     location /ws {
         proxy_pass http://localhost:9102;  
         proxy_http_version 1.1;
@@ -622,7 +622,7 @@ server {
 ### **Modifications for a New Client**
 - **Change the `server_name`** to the new client’s IP or domain.
 - **Modify the `listen` port** (e.g., change `443` to `444` or an unused port).
-- **Update authentication file reference** (`.htpasswd-foradian1` → `.htpasswd-newclient`).
+- **Update authentication file reference** (`.htpasswd-client_name1` → `.htpasswd-newclient`).
 - **Adjust the backend service port** (`9102` → desired application port).
 
 ### **Restart Nginx**
