@@ -498,9 +498,7 @@ Would you like additional enhancements, such as **auto-blocking failed login att
 
 
 ----------------------------------------------
-# [reference: when setting up username-password authentication for a URL in Nginx.] 
-Here's a well-structured document you can use for future reference when setting up username-password authentication for a URL in Nginx.
-
+# [3. reference: when setting up username-password authentication for a URL in Nginx.] 
 ---
 
 # **Setting Up Username-Password Authentication in Nginx**
